@@ -25,34 +25,37 @@ int getRandomValue();
  */
 static void vUARTinit( void );
 
-typedef struct{
-	int valuesArray[9];
-	int index;
-	int promedio;
-	int N;
-}MyArray;
-void initArray(MyArray *array){
-	array->index=0;
-	array->promedio=0;
-	array->N=9;
-}
-void addValue(MyArray *array,int value){
-	array->valuesArray[array->index]=value;
-	array->index++;
-	if(array->index > (array->N - 1)) array->index=0;
-}
-void calcularPromedio(MyArray *array){
-	int suma=0;
-    int i=0;
-	do{
-        suma+=array->valuesArray[i];
-        i++;
-    }while(i<array->N-1);
-	array->promedio=suma/array->N;
-}
-void setN(MyArray *array,int n){
-	array->N=n;
-}
+// typedef struct{
+// 	int valuesArray[9];
+// 	int index;
+// 	float promedio;
+// 	int N;
+// }MyArray;
+
+// void initArray(MyArray *array){
+// 	array->index=0;
+// 	array->promedio=0;
+// 	array->N=9;
+// }
+
+// void addValue(MyArray *array,int value){
+// 	array->valuesArray[array->index]=value;
+// 	array->index++;
+// 	if(array->index > (array->N - 1)) array->index=0;
+// }
+
+// void calcularPromedio(MyArray *array){
+// 	int suma=0;
+//     int i=0;
+// 	do{
+//         suma+=array->valuesArray[i];
+//         i++;
+//     }while(i<array->N-1);
+// 	array->promedio=suma/array->N;
+// }
+// void setN(MyArray *array,int n){
+// 	array->N=n;
+// }
 
 
 //TASKS
@@ -108,12 +111,15 @@ static void vUARTinit( void )
 
 
 /*-----------------------------------------------------------*/
-
 void vUART_ISR(void)
 {
     uint32_t ui32Status;
-    char cChar;
-
+    int n;
+    char nchar;
+    char string[4];
+    string[0]='N';
+    string[1]='=';
+    string[3]='\0';
     // Obtener la causa de la interrupción UART
     ui32Status = UARTIntStatus(UART0_BASE, true);
 
@@ -123,36 +129,19 @@ void vUART_ISR(void)
     // Procesar la interrupción de recepción UART
     if (ui32Status & (UART_INT_RX | UART_INT_RT)) {
         // Leer el carácter recibido
-        cChar = UARTCharGet(UART0_BASE);
-
-        // Imprimir el carácter en el display
-        //OSRAMClear();
-		//OSRAMStringDraw(&cChar,0,0);
+        nchar = UARTCharGet(UART0_BASE);
+        n = nchar - 48;
+        string[2]=nchar;
+        if(n>0 && n<9){
+            OSRAMStringDraw(string,78,0);
+            N=n;
+        }
 	}
 }
 /*-----------------------------------------------------------*/
 
 
 /*-----------------------------------------------------------*/
-
-void vCounterTask(void *pvParameters) {
-    TickType_t xLastWakeTime;
-    const TickType_t xDelay = pdMS_TO_TICKS(10000);
-    // Inicializar xLastWakeTime con el tiempo actual
-    xLastWakeTime = xTaskGetTickCount();
-	int counter = 0;
-	char string[10];
-    
-    while (1) {
-        // Realizar las acciones de la tarea
-        counter++;
-		enteroToString(counter,string);
-		//OSRAMStringDraw(string,0,0);
-        // Esperar 1 segundo desde la última ejecución
-        vTaskDelayUntil(&xLastWakeTime, xDelay);
-    }
-}
-
 void vSensorTask(void *pvParameters) {
 	TickType_t xLastWakeTime;
     const TickType_t xDelay = pdMS_TO_TICKS(1000);
@@ -181,7 +170,7 @@ void vFilterTask(void *pvParameters){
     int valuesArray[9];
     int index=0;
     int promedio;
-    int N=1;
+    //int N=1;
     int suma;
 	while(true){
 		if (xQueueReceive(xSensorQueue, &value, portMAX_DELAY) == pdPASS) {
@@ -198,7 +187,7 @@ void vFilterTask(void *pvParameters){
             for(int i=0;i<N;i++)suma+=valuesArray[i];
             promedio=suma/N;
             enteroToString(promedio,string);
-			OSRAMClear();
+			//OSRAMClear();
 			OSRAMStringDraw(string,0,0);			
 			// xQueueSend(xDisplayQueue,&promedio,portMAX_DELAY);
         }
