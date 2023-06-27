@@ -20,43 +20,7 @@ efficient. */
 #define SEED 420
 
 int getRandomValue();
-/*
- * Initialize the UART module.
- */
 static void vUARTinit( void );
-
-// typedef struct{
-// 	int valuesArray[9];
-// 	int index;
-// 	float promedio;
-// 	int N;
-// }MyArray;
-
-// void initArray(MyArray *array){
-// 	array->index=0;
-// 	array->promedio=0;
-// 	array->N=9;
-// }
-
-// void addValue(MyArray *array,int value){
-// 	array->valuesArray[array->index]=value;
-// 	array->index++;
-// 	if(array->index > (array->N - 1)) array->index=0;
-// }
-
-// void calcularPromedio(MyArray *array){
-// 	int suma=0;
-//     int i=0;
-// 	do{
-//         suma+=array->valuesArray[i];
-//         i++;
-//     }while(i<array->N-1);
-// 	array->promedio=suma/array->N;
-// }
-// void setN(MyArray *array,int n){
-// 	array->N=n;
-// }
-
 
 //TASKS
 //static void vCounterTask( void *pvParameters );
@@ -66,10 +30,11 @@ static void vDisplayTask(void *pvParameters);
 
 
 QueueHandle_t xSensorQueue;
-QueueHandle_t xDisplayQueue;
+QueueHandle_t xDisplayTempQueue;
+QueueHandle_t xDisplayNQueue;
+QueueHandle_t xUARTQueue;
 //MyArray *array;
 unsigned int rand_seed = SEED;
-int N=1;
 /*-----------------------------------------------------------*/
 
 int main( void )
@@ -77,13 +42,15 @@ int main( void )
 	vUARTinit();
 	//initArray(array);
 	xSensorQueue = xQueueCreate( mainQUEUE_SIZE, sizeof( int ) );
-	xDisplayQueue = xQueueCreate( mainQUEUE_SIZE, sizeof( float ) );
+	xDisplayTempQueue = xQueueCreate( mainQUEUE_SIZE, sizeof( int ) );
+    xDisplayNQueue = xQueueCreate( mainQUEUE_SIZE, sizeof( int ) );
+    xUARTQueue = xQueueCreate( mainQUEUE_SIZE, sizeof( int ) );
 
 	/* Start the tasks defined within the file. */
 	//xTaskCreate( vCounterTask, "Counter", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
 	xTaskCreate( vSensorTask, "Sensor", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
 	xTaskCreate( vFilterTask, "Filter", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
-	//xTaskCreate( vDisplayTask, "Display", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
+	xTaskCreate( vDisplayTask, "Display", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
 	/* Start the scheduler. */
 	vTaskStartScheduler();
 
@@ -116,10 +83,7 @@ void vUART_ISR(void)
     uint32_t ui32Status;
     int n;
     char nchar;
-    char string[4];
-    string[0]='N';
-    string[1]='=';
-    string[3]='\0';
+  
     // Obtener la causa de la interrupción UART
     ui32Status = UARTIntStatus(UART0_BASE, true);
 
@@ -131,10 +95,9 @@ void vUART_ISR(void)
         // Leer el carácter recibido
         nchar = UARTCharGet(UART0_BASE);
         n = nchar - 48;
-        string[2]=nchar;
-        if(n>0 && n<9){
-            OSRAMStringDraw(string,78,0);
-            N=n;
+        if(n>0 && n<10){
+            //N=n;
+            xQueueSend(xUARTQueue,&n,portMAX_DELAY);
         }
 	}
 }
@@ -152,8 +115,8 @@ void vSensorTask(void *pvParameters) {
     while (true) {
 		if(getRandomValue()%2==0)value++;
 		else value--;
-		if(value<30)value=30;
-		if(value>80)value=80;
+		if(value<0)value=0;
+		if(value>96)value=96;
         
         // Intentar enviar el mensaje a la cola
         if (xQueueSend(xSensorQueue, &value, portMAX_DELAY) != pdPASS) {
@@ -166,19 +129,16 @@ void vSensorTask(void *pvParameters) {
 
 void vFilterTask(void *pvParameters){
 	int value;
-	int string[10];
-    int valuesArray[9];
+    int valuesArray[9]={0,0,0,0,0,0,0,0,0};
     int index=0;
     int promedio;
-    //int N=1;
+    int N=9;
     int suma;
 	while(true){
+		if (xQueueReceive(xUARTQueue, &N, 0) == pdPASS) {    
+			xQueueSend(xDisplayNQueue,&N,portMAX_DELAY);
+        }
 		if (xQueueReceive(xSensorQueue, &value, portMAX_DELAY) == pdPASS) {
-            //enteroToString(value,string);
-            //OSRAMClear();
-            //OSRAMStringDraw(string,0,0);
-			// addValue(array,value);
-			// calcularPromedio(array);
 
             valuesArray[index]=value;
             index++;
@@ -186,25 +146,32 @@ void vFilterTask(void *pvParameters){
             suma=0;
             for(int i=0;i<N;i++)suma+=valuesArray[i];
             promedio=suma/N;
-            enteroToString(promedio,string);
-			//OSRAMClear();
-			OSRAMStringDraw(string,0,0);			
-			// xQueueSend(xDisplayQueue,&promedio,portMAX_DELAY);
+            
+			xQueueSend(xDisplayTempQueue,&promedio,portMAX_DELAY);
         }
 	}
 }
 
-// static void vDisplayTask(void *pvParameters){
-// 	float temperature;
-// 	char string[10];
-// 	while(true){
-// 		if (xQueueReceive(xDisplayQueue, &temperature, portMAX_DELAY) == pdPASS) {
-// 			floatToString(temperature,string,2);
-// 		}
-// 		OSRAMClear();
-// 		OSRAMStringDraw(string,0,0);
-// 	}
-// }
+static void vDisplayTask(void *pvParameters){
+	int temperature;
+    int N;
+	char string[2];
+    char image_data[96];
+    for(int i=0;i<96;i++) image_data[i]=0xFF;
+    char string2[4] = {'N','=','9','\0'};
+	while(true){
+        if (xQueueReceive(xDisplayNQueue, &N, 0) == pdPASS) {
+			string2[2]=(char)(N+48);
+		}
+		if (xQueueReceive(xDisplayTempQueue, &temperature, portMAX_DELAY) == pdPASS) {
+			enteroToString(temperature,string);
+		}
+        OSRAMClear();
+		OSRAMStringDraw(string,0,0);
+        OSRAMStringDraw(string2,78,0);
+        OSRAMImageDraw(image_data,0,1,temperature,1);
+	}
+}
 
 //algoritmo generador de números pseudoaleatorios conocido como "congruencia lineal"
 int getRandomValue()
@@ -213,8 +180,6 @@ int getRandomValue()
 
   return (rand_seed / 131072) % 65536;
 }
-
-
 
 void enteroToString(int numero, char *cadena) {
     // Verificar si el número es negativo
